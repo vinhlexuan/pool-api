@@ -5,6 +5,6 @@ from controllers.pool import PoolController
 class Module:
     def __init__(self) -> None:
         self.app = FastAPI()
-        poolService = PoolServiceImpl()
-        poolController = PoolController(poolService)
-        self.app.include_router(poolController.router, tags=["pool"], prefix="/pool")
+        pool_service = PoolServiceImpl()
+        pool_controller = PoolController(pool_service)
+        self.app.include_router(pool_controller.router, tags=["pool"], prefix="/pool")

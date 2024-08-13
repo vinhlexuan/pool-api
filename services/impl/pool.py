@@ -1,44 +1,53 @@
 from models.pool import BasePool, PoolQueryReq, PoolQueryRes, PoolUpdateReq, PoolUpdateRes
 from services.pool import PoolService
-from data import poolData
-
+from utils.file_data import load_data, save_data
+from utils.lru_cache import LRUCache
 
 class PoolServiceImpl(PoolService):
-    def update_pool(self, poolUpdateReq: PoolUpdateReq) -> PoolUpdateRes:
-        id = poolUpdateReq.poolId
-        if id in poolData:
+    def __init__(self) -> None:
+        self.cache = LRUCache(3)
+
+    def update_pool(self, pool_update_req: PoolUpdateReq) -> PoolUpdateRes:
+        id = pool_update_req.poolId
+        pools = load_data()
+        if str(id) in pools:
             status = "appended"
-            poolData[id].extend(poolUpdateReq.poolValues)
+            pools[str(id)].extend(pool_update_req.poolValues)
         else:
             status = "inserted"
-            poolData[id] = poolUpdateReq.poolValues
-
+            pools[str(id)] = pool_update_req.poolValues
+        self.cache.put(id, pools[str(id)])
+        save_data(pools)
         return PoolUpdateRes(
             status=status,
             pool=BasePool(
                 poolId=id,
-                poolValues=poolData[id]
+                poolValues=pools[str(id)]
             )
         ) 
     
-    def query_pool(self, poolQueryReq: PoolQueryReq) -> PoolQueryRes:
-        id = poolQueryReq.poolId
-        values = poolData[id]
-        quantile = self._calculate_quantile(values, poolQueryReq.percentile)
+    def query_pool(self, pool_query_req: PoolQueryReq) -> PoolQueryRes:
+        id = pool_query_req.poolId
+        values = self.cache.get(id)
+        if not values:
+            pools = load_data()
+            values = pools[str(id)]
+            self.cache.put(id, values)
+        quantile = self.calculate_quantile(values, pool_query_req.percentile)
         return PoolQueryRes(
             quantile=quantile,
-            numOfElements=len(poolData[id])
+            numOfElements=len(values)
         )
     
-    def _calculate_quantile(self, values: list[int], percentile: float):
+    def calculate_quantile(self, values: list[int], percentile: float) -> float:
         if not values:
-            raise Exception()
+            raise ValueError("Values must not be empty!")
         size = len(values)
         if size == 1:
             return values[0]
         values.sort()
         idx = (size - 1) * (percentile / 100) + 1
         integer_part = int(idx)
-        decimal_part = round(idx - integer_part, 2)
-        quantile = values[integer_part - 1] * (1 - decimal_part) + values[integer_part] * decimal_part
+        decimal_part = idx - integer_part
+        quantile = round(values[integer_part - 1] * (1 - decimal_part) + values[integer_part] * decimal_part, 2)
         return quantile
